@@ -25,13 +25,19 @@ instance Grp (FreeAbelian a) where
   inv f1 x = -(f1 x)             -- negative the indices
   id x = 0
   
-type family GroupHomos a b :: *
+type family GroupHomos a b :: * -- is this superfluous
+  
+data GroupObj 
   
 --class (FinAbGrp a, FinAbGrp b) => GroupHom a b where
   -- i am seriously considering representing my groups at the type level...
 data FinAbGrps :: * -> * -> * where
-  Homomorphisms :: (FinAbGrp a, FinAbGrp b) => GroupHomos a b -> FinAbGrps a b
+  Homomorphisms :: (FinAbGrp a, FinAbGrp b) => FinSets a b
   
  
+data FinGrp = FinGrp  
 
---instance C.Category FinAbGrps where
+instance C.Category FinAbGrps where
+
+  data C.Obj FinAbGrps a = HaskO
+    

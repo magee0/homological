@@ -20,7 +20,7 @@
 module Data.Category.Abelian (
 
   -- * Classes refining Category
-  HasZeroObject,
+  HasZeroObject(..),
   HasPullbacks,
   HasPushouts,
   AbelianCategory,
