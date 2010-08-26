@@ -49,8 +49,8 @@ import Prelude hiding ((.), id, Functor, product)
 class C.Category (~>) => HasZeroObject (~>) where
   type ZeroObject (~>) :: *
   zeroObject :: C.Obj (~>) (ZeroObject (~>))
-  terminate  :: C.Obj (~>) a -> a ~> (ZeroObject (~>))
   initialize :: C.Obj (~>) a -> (ZeroObject (~>)) ~> a
+  terminate  :: C.Obj (~>) a -> a ~> (ZeroObject (~>))
 
 -- | A pullback is the limit of a cospan, so the existence of limits implies
 -- the existence of all pullbacks.
