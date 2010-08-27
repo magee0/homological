@@ -102,7 +102,7 @@ instance C.Category AbGrps where
   id AbGrpsO = AbGrpsA (F.Id)
   AbGrpsA hom' . AbGrpsA hom = AbGrpsA (hom' F.:.: hom) 
 
--- | The zero object is suppplied by the wrapped, arrowized version of
+-- | The zero object is supplied by the wrapped, arrowized version of
 -- the trivial group. There is only one type for the 'other level'
 -- version of the zero object. We use the functor-to-morphism map to
 -- realize termination as a constant functor to the arrowized trivial
@@ -112,3 +112,14 @@ instance A.HasZeroObject AbGrps where
     zeroObject                = AbGrpsO
     initialize AbGrpsO        = AbGrpsA (UD MonoidO)
     terminate  AbGrpsO        = AbGrpsA $ F.Const MonoidO
+
+pullback :: (AbGrps a b) -> (AbGrps c b) ->     
+    
+-- | Show existence of pullbacks.
+--instance L.HasLimits (C.Op Lambda) AbGrps where
+
+  --limitUniv (NatO f) = limitUniversal
+    
+    
+    
+    

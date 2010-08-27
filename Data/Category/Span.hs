@@ -1,7 +1,8 @@
 {-# LANGUAGE GADTs,
              EmptyDataDecls,
              KindSignatures,
-             TypeFamilies #-}
+             TypeFamilies,
+             TypeOperators             #-}
 -----------------------------------------------------------------------------
 -- |
 -- Module      :  Data.Category.Span
@@ -19,6 +20,8 @@ module Data.Category.Span (
 ) where
 
 import qualified Data.Category as C
+import Data.Category.Functor
+import qualified Prelude
 
 -- | Type representing minus one.
 data MOne
@@ -65,4 +68,31 @@ instance C.Category Lambda where
   ZeroPlusOne . IdZero      = ZeroPlusOne
   IdPlusOne . ZeroPlusOne   = ZeroPlusOne 
   IdMinusOne . ZeroMinusOne = ZeroMinusOne
-  _ . _ = undefined -- this shouldn't happen
+  _ . _ = Prelude.undefined -- this shouldn't happen
+  
+-- | Realize a functor into an abstract category
+data SpanFunctor :: (* -> * -> *) -> * -> * -> * -> * where
+  SpanF :: (C.Category (~>)) => (b ~> a) -> (b ~> c) -> SpanFunctor (~>) a b c
+  
+type instance Dom (SpanFunctor (~>) a b c) = Lambda
+type instance Cod (SpanFunctor (~>) a b c) = (~>)
+
+type instance SpanFunctor (~>) a b c :% MOne = a
+type instance SpanFunctor (~>) a b c :% Z    = b
+type instance SpanFunctor (~>) a b c :% POne = c
+
+instance Functor (SpanFunctor (~>) a b c) where
+
+  SpanF ba bc %% MinusOne    = C.tgt ba -- aka a
+  SpanF ba bc %% Zero        = C.src ba -- or C.src bc
+  SpanF ba bc %% PlusOne     = C.tgt bc -- aka c
+  SpanF ba bc % IdMinusOne   = C.id (C.tgt ba)
+  SpanF ba bc % IdPlusOne    = C.id (C.tgt bc)
+  SpanF ba bc % IdZero       = C.id (C.src ba)
+  SpanF ba bc % ZeroMinusOne = ba
+  SpanF ba bc % ZeroPlusOne  = bc
+  
+  
+  
+  
+  
