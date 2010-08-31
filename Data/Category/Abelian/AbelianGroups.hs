@@ -3,7 +3,9 @@
              KindSignatures,
              TypeFamilies,
              TypeSynonymInstances,
-             FlexibleInstances
+             FlexibleInstances,
+             MultiParamTypeClasses,
+             TypeOperators
               #-}
 -----------------------------------------------------------------------------
 -- |
@@ -21,12 +23,14 @@ import qualified Data.Category as C
 import qualified Data.Category.Functor as F
 import qualified Data.Category.Unit as U
 import qualified Data.Category.Abelian as A
-import Prelude (($))
+import qualified Data.Category.Span as S
+import Prelude (($), Bool, Eq, undefined, (==))
+import Data.Bool
 import qualified Prelude
 
 -- | Redefinition of this class as I don't want to refer to mappend or 
 -- have 'concat' present in what follows.
-class Monoid m where
+class  Monoid m where
   o    :: m -> m -> m
   idd  :: m
 
@@ -41,6 +45,9 @@ class Group g => AbGrp g -- may need to include details to enforce an abelian ca
 data Arrowized m a b where
   Arrowize :: Monoid m => m -> Arrowized m m m 
 
+instance Eq m => Eq (Arrowized m a b) where
+  Arrowize m1 == Arrowize m2 = m1 == m2  
+  
 -- | Declaration that the 'arrowized' data type is indeed a category.  
 instance Monoid m => C.Category (Arrowized m) where
   
@@ -56,6 +63,9 @@ instance Monoid m => C.Category (Arrowized m) where
 -- | The trivial group. Non empty for posterity.  
 data TrivialGroup = TGM 
 
+instance Eq TrivialGroup where
+ TGM == TGM = True
+
 -- | Description of how it becomes a monoid.
 instance Monoid TrivialGroup where
   o TGM TGM = TGM
@@ -67,6 +77,11 @@ instance Group TrivialGroup where
  
 -- | It is also an abelian group. 
 instance AbGrp TrivialGroup 
+
+-- The booleans form a monoid.
+instance Monoid Bool where 
+  o = (&&)
+  idd = True
 
 -- | A functor from the unit category to one element.
 data UnitDiagram :: (* -> * -> *) -> * -> * where
@@ -113,10 +128,57 @@ instance A.HasZeroObject AbGrps where
     initialize AbGrpsO        = AbGrpsA (UD MonoidO)
     terminate  AbGrpsO        = AbGrpsA $ F.Const MonoidO
 
-pullback :: (AbGrps a b) -> (AbGrps c b) ->     
+  
+data Product :: * -> * -> * where
+  Prod :: a -> b -> Product a b deriving Eq
+
+-- | A product inherits a monoid structure.  
+instance (Monoid a, Monoid b) => Monoid (Product a b) where
+  o (Prod x y) (Prod x' y') = Prod (x `o` x') (y `o` y')
+  idd = Prod idd idd
+
+prodF :: (a -> c) -> (b -> d) -> Product a b -> Product c d 
+prodF f g (Prod x y) = Prod (f x) (g y)
+
+data Pull :: * -> * -> * -> * where 
+  Pull :: (F.Functor gj, F.Functor hj, F.Cod gj ~ F.Cod hj, F.Cod gj ~ Arrowized j, F.Dom gj ~ Arrowized g, F.Dom hj ~  Arrowized h) => 
+    gj -> hj -> g -> h -> Pull g j h
+
+-- a new start, maybe easier?   
+data DroppedAG :: * -> * -> * where   
+  Mdrop :: (AbGrp m, AbGrp n, F.Functor f, F.Dom f ~ Arrowized m, F.Cod f ~ Arrowized n) =>  f -> DroppedAG m n -- and moreover this will be be an arrow in the category if the functor contract obeyed    
+
+instance C.Category DroppedAG where
+
+  data C.Obj DroppedAG a where -- objects are wrapped categories
+    AbGrpsOO :: AbGrp g => C.Obj DroppedAG g
+    
+  src (Mdrop _) = AbGrpsOO 
+  tgt (Mdrop _) = AbGrpsOO
+  
+  id AbGrpsOO = Mdrop (F.Id)
+  Mdrop hom' . Mdrop hom = Mdrop (hom' F.:.: hom) 
+  
+instance A.HasZeroObject DroppedAG where
+    type A.ZeroObject DroppedAG = TrivialGroup
+    zeroObject                 = AbGrpsOO
+    initialize AbGrpsOO        = Mdrop (UD MonoidO)
+    terminate  AbGrpsOO        = Mdrop (F.Const MonoidO)  
+    
     
 -- | Show existence of pullbacks.
+
+-- for all cospan diagrams in AbGrps build
+-- a) the concrete cospan functor
+-- b) the limit cone to this functor.
+-- to do this we need to construct a natural transformation
+-- first we need a type corresponding to the pullback
+
+-- the pullback object corresponds to a restricted product.
+
 --instance L.HasLimits (C.Op Lambda) AbGrps where
+
+
 
   --limitUniv (NatO f) = limitUniversal
     
