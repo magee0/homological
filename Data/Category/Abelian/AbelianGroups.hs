@@ -5,7 +5,10 @@
              TypeSynonymInstances,
              FlexibleInstances,
              MultiParamTypeClasses,
-             TypeOperators
+             TypeOperators,
+			 FlexibleContexts,
+			 UndecidableInstances,
+			 ScopedTypeVariables
               #-}
 -----------------------------------------------------------------------------
 -- |
@@ -31,8 +34,8 @@ import qualified Prelude
 -- | Redefinition of this class as I don't want to refer to mappend or 
 -- have 'concat' present in what follows.
 class  Monoid m where
-  o    :: m -> m -> m
-  idd  :: m
+  (<*>) :: m -> m -> m
+  idd   :: m
 
 -- | A group is a monod with inverses.  
 class Monoid g => Group g where
@@ -58,7 +61,15 @@ instance Monoid m => C.Category (Arrowized m) where
   tgt (Arrowize _) = MonoidO
   
   id MonoidO                    = Arrowize idd
-  (Arrowize a) . (Arrowize b) = Arrowize $ a `o` b
+  (Arrowize a) . (Arrowize b) = Arrowize $ a <*> b
+
+-- | Lifts the identity up to the arrows from the monoid.
+idA :: (Monoid m) => (Arrowized m m m)
+idA = Arrowize idd
+
+-- | Lifts the groups invert to the arrows.  
+invA :: (Group m) => (Arrowized m m m) -> (Arrowized m m m)
+invA (Arrowize mObj) = Arrowize (inv mObj) 
 
 -- | The trivial group. Non empty for posterity.  
 data TrivialGroup = TGM 
@@ -68,7 +79,7 @@ instance Eq TrivialGroup where
 
 -- | Description of how it becomes a monoid.
 instance Monoid TrivialGroup where
-  o TGM TGM = TGM
+  TGM <*> TGM = TGM
   idd = TGM
   
 -- | Inverse of only element is only element.  
@@ -80,8 +91,8 @@ instance AbGrp TrivialGroup
 
 -- The booleans form a monoid.
 instance Monoid Bool where 
-  o = (&&)
-  idd = True
+  (<*>) = (&&)
+  idd   = True
 
 -- | A functor from the unit category to one element.
 data UnitDiagram :: (* -> * -> *) -> * -> * where
@@ -134,38 +145,84 @@ data Product :: * -> * -> * where
 
 -- | A product inherits a monoid structure.  
 instance (Monoid a, Monoid b) => Monoid (Product a b) where
-  o (Prod x y) (Prod x' y') = Prod (x `o` x') (y `o` y')
+  (Prod x y) <*> (Prod x' y') = Prod (x <*> x') (y <*> y')
   idd = Prod idd idd
 
 prodF :: (a -> c) -> (b -> d) -> Product a b -> Product c d 
 prodF f g (Prod x y) = Prod (f x) (g y)
 
-data Pull :: * -> * -> * -> * where 
-  Pull :: (F.Functor gj, F.Functor hj, F.Cod gj ~ F.Cod hj, F.Cod gj ~ Arrowized j, F.Dom gj ~ Arrowized g, F.Dom hj ~  Arrowized h) => 
-    gj -> hj -> g -> h -> Pull g j h
 
 -- a new start, maybe easier?   
-data DroppedAG :: * -> * -> * where   
-  Mdrop :: (AbGrp m, AbGrp n, F.Functor f, F.Dom f ~ Arrowized m, F.Cod f ~ Arrowized n) =>  f -> DroppedAG m n -- and moreover this will be be an arrow in the category if the functor contract obeyed    
+data AGHom :: * -> * -> * where   
+  Mdrop :: (AbGrp m, AbGrp n, F.Functor f, F.Dom f ~ Arrowized m, F.Cod f ~ Arrowized n) =>  f -> AGHom m n -- and moreover this will be be an arrow in the category if the functor contract obeyed    
 
-instance C.Category DroppedAG where
+	
+instance C.Category AGHom where
 
-  data C.Obj DroppedAG a where -- objects are wrapped categories
-    AbGrpsOO :: AbGrp g => C.Obj DroppedAG g
+  data C.Obj AGHom a where -- objects are the groups
+    AbGrpsOO :: AbGrp g => C.Obj AGHom g
     
   src (Mdrop _) = AbGrpsOO 
   tgt (Mdrop _) = AbGrpsOO
   
   id AbGrpsOO = Mdrop (F.Id)
   Mdrop hom' . Mdrop hom = Mdrop (hom' F.:.: hom) 
-  
-instance A.HasZeroObject DroppedAG where
-    type A.ZeroObject DroppedAG = TrivialGroup
+
+instance A.HasZeroObject AGHom where
+    type A.ZeroObject AGHom    = TrivialGroup
     zeroObject                 = AbGrpsOO
     initialize AbGrpsOO        = Mdrop (UD MonoidO)
     terminate  AbGrpsOO        = Mdrop (F.Const MonoidO)  
-    
-    
+
+data DiffFunctor :: * -> * -> * -> * -> * where
+  DiffF :: (Group m, Group n, F.Functor f, F.Functor g, 
+    F.Dom f ~ Arrowized m,  F.Dom g ~ Arrowized m, -- same domains
+	F.Cod f ~ Arrowized n,  F.Cod g ~ Arrowized n) -- and codomains
+	=> f -> g -> DiffFunctor f g m n
+	
+type instance F.Dom (DiffFunctor f g m n) = Arrowized m
+type instance F.Cod (DiffFunctor f g m n) = Arrowized n
+
+type instance (DiffFunctor f g m n) F.:% m = n
+
+instance (Group m, Group n, F.Functor f, F.Functor g, 
+    F.Dom f ~ Arrowized m,  F.Dom g ~ Arrowized m, -- same domains
+	F.Cod f ~ Arrowized (f F.:% m),  F.Cod g ~ Arrowized (g F.:% m)) => F.Functor (DiffFunctor f g m n) where
+	
+	DiffF f g %% MonoidO = MonoidO
+	DiffF f g %  arrow@(Arrowize _) = (f F.% arrow) C.. (g F.% (invA arrow)) -- i.e. (f - g) 	
+	
+data Kernel :: * -> * where -- the kernel of the homomorphism, parameterized by first type.
+  Restrict :: a -> Kernel (a `AGHom` b)
+  
+-- | The kernel of a monoid morphism is a monoid, with multiplication
+-- given by restriction.  
+instance (Monoid a, Monoid b) => Monoid (Kernel (a `AGHom` b)) where
+  idd = Restrict idd
+  (Restrict x) <*> (Restrict y) = Restrict (x <*> y)   
+  
+data FirstProj :: * -> * where --parameters by first generic
+  FirstP :: (AbGrp a) => FirstProj a -- projection out of any product
+  
+type instance F.Dom (FirstProj a) = Arrowized (Product a )   
+type instance F.Cod (FirstProj a) = Arrowized a
+
+type instance (FirstProj a) F.:% (Product a b) = a
+
+instance F.Functor (FirstProj a b) where
+
+  FirstP %% MonoidO = MonoidO -- always same underlying object
+  FirstP %  arrow@(Arrowize (Prod x _)) = Arrowize x
+  
+	
+-- | Gives the difference of two parallel arrows in an abelian group.  
+--diffHomo :: a `AGHom` b -> a `AGHom` b -> a `AGHom` b
+
+
+--class (AbGrp a, AbGrp b , AbGrp c) => Pullback AGHom a b c (AbPullback
+  
+  
+
 -- | Show existence of pullbacks.
 
 -- for all cospan diagrams in AbGrps build
