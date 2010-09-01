@@ -27,6 +27,7 @@ import qualified Data.Category.Functor as F
 import qualified Data.Category.Unit as U
 import qualified Data.Category.Abelian as A
 import qualified Data.Category.Span as S
+import qualified Data.Category.Product as P
 import Prelude (($), Bool, Eq, undefined, (==))
 import Data.Bool
 import qualified Prelude
@@ -46,7 +47,15 @@ class Group g => AbGrp g -- may need to include details to enforce an abelian ca
 
 -- | Maps a monoid to the corresponding one object category.
 data Arrowized m a b where
-  Arrowize :: Monoid m => m -> Arrowized m m m 
+  Arrowize  :: Monoid m => m -> Arrowized m m m 
+  LP        :: (Monoid m, Monoid n) => m -> n -> Arrowized (Product m n) (Product m n) (Product m n)
+  
+-- step 2. show that the arrowization makes a monoid. This will give us arbitary prducts. 
+
+
+ 
+unArrow :: (Monoid m) => Arrowized m m m -> m  
+unArrow (Arrowize x) = x
 
 instance Eq m => Eq (Arrowized m a b) where
   Arrowize m1 == Arrowize m2 = m1 == m2  
@@ -147,15 +156,25 @@ data Product :: * -> * -> * where
 instance (Monoid a, Monoid b) => Monoid (Product a b) where
   (Prod x y) <*> (Prod x' y') = Prod (x <*> x') (y <*> y')
   idd = Prod idd idd
+  
+data IsoMonoid :: (* -> * -> * ) -> * -> * where
+  Isotropy :: (C.Category (~>)) =>  ((~>) a a) -> IsoMonoid (~>) a -- the iso monoid around a object in category
+  
+  
+instance (C.Category (~>)) =>  Monoid (IsoMonoid (~>) a) where
+  (Isotropy arrA) <*> (Isotropy arrB) = Isotropy (arrA C.. arrB)
+  idd = (Isotropy (C.id undefined)) -- I don't really like this
+  
+  
 
 prodF :: (a -> c) -> (b -> d) -> Product a b -> Product c d 
 prodF f g (Prod x y) = Prod (f x) (g y)
 
-
 -- a new start, maybe easier?   
 data AGHom :: * -> * -> * where   
-  Mdrop :: (AbGrp m, AbGrp n, F.Functor f, F.Dom f ~ Arrowized m, F.Cod f ~ Arrowized n) =>  f -> AGHom m n -- and moreover this will be be an arrow in the category if the functor contract obeyed    
+  Mdrop  :: (AbGrp m, AbGrp n, F.Functor f, F.Dom f ~ Arrowized m, F.Cod f ~ Arrowized n) => f -> AGHom m n
 
+  
 	
 instance C.Category AGHom where
 
@@ -166,7 +185,7 @@ instance C.Category AGHom where
   tgt (Mdrop _) = AbGrpsOO
   
   id AbGrpsOO = Mdrop (F.Id)
-  Mdrop hom' . Mdrop hom = Mdrop (hom' F.:.: hom) 
+  Mdrop hom' . Mdrop hom  = Mdrop  (hom' F.:.: hom) 
 
 instance A.HasZeroObject AGHom where
     type A.ZeroObject AGHom    = TrivialGroup
@@ -178,7 +197,7 @@ data DiffFunctor :: * -> * -> * -> * -> * where
   DiffF :: (Group m, Group n, F.Functor f, F.Functor g, 
     F.Dom f ~ Arrowized m,  F.Dom g ~ Arrowized m, -- same domains
 	F.Cod f ~ Arrowized n,  F.Cod g ~ Arrowized n) -- and codomains
-	=> f -> g -> DiffFunctor f g m n
+	=> f -> g -> DiffFunctor f g m n    
 	
 type instance F.Dom (DiffFunctor f g m n) = Arrowized m
 type instance F.Cod (DiffFunctor f g m n) = Arrowized n
@@ -192,27 +211,50 @@ instance (Group m, Group n, F.Functor f, F.Functor g,
 	DiffF f g %% MonoidO = MonoidO
 	DiffF f g %  arrow@(Arrowize _) = (f F.% arrow) C.. (g F.% (invA arrow)) -- i.e. (f - g) 	
 	
-data Kernel :: * -> * where -- the kernel of the homomorphism, parameterized by first type.
-  Restrict :: a -> Kernel (a `AGHom` b)
+data Kernel :: * ->  * -> *  where -- the kernel of the homomorphism, parameterized by first type.
+  Kern :: (a `AGHom` b) -> a -> Kernel a b -- partial function
   
+
 -- | The kernel of a monoid morphism is a monoid, with multiplication
 -- given by restriction.  
-instance (Monoid a, Monoid b) => Monoid (Kernel (a `AGHom` b)) where
-  idd = Restrict idd
-  (Restrict x) <*> (Restrict y) = Restrict (x <*> y)   
+instance Monoid a => Monoid (Kernel a b) where
+  idd = Kern undefined idd
+  (Kern hom1 a1) <*> (Kern hom2 a2) = Kern hom1 (a1 <*> a2) -- strange but best at minute   
   
-data FirstProj :: * -> * where --parameters by first generic
-  FirstP :: (AbGrp a) => FirstProj a -- projection out of any product
+
+-- Give Functors for the fst and second projections.
+
+data FstProj a b = FstP
+
+type instance F.Dom (FstProj a b) = Arrowized (Product a b)
+type instance F.Cod (FstProj a b) = Arrowized a
+type instance (FstProj a b) F.:% (Product a1 a2) = a1    
+ 
+instance F.Functor (FstProj a b) where
+
+  FstP %% MonoidO           = MonoidO
+  FstP %  LP x y            = Arrowize x
+
+data SndProj a b = SndP
+
+type instance F.Dom (SndProj a b) = Arrowized (Product a b)
+type instance F.Cod (SndProj a b) = Arrowized b
+type instance (SndProj a b) F.:% (Product a1 a2) = a2    
+ 
+instance F.Functor (SndProj a b) where
+
+  SndP %% MonoidO           = MonoidO
+  SndP %  LP x y            = Arrowize y  
+
+
+--buildPullback (Mdrop f) (Mdrop g) x = Kern (Mdrop (DiffF top bottom)) x 
+--  where top    = f F.:.: FstP
+--        bottom = g F.:.: SndP 
   
-type instance F.Dom (FirstProj a) = Arrowized (Product a )   
-type instance F.Cod (FirstProj a) = Arrowized a
 
-type instance (FirstProj a) F.:% (Product a b) = a
-
-instance F.Functor (FirstProj a b) where
-
-  FirstP %% MonoidO = MonoidO -- always same underlying object
-  FirstP %  arrow@(Arrowize (Prod x _)) = Arrowize x
+-- now we can realize the pullback as the kernel of the difference map  
+  
+  --  where Prod x y = unArrow arrow
   
 	
 -- | Gives the difference of two parallel arrows in an abelian group.  
